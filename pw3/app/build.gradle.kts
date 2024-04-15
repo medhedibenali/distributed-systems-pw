@@ -32,9 +32,24 @@ java {
     }
 }
 
-application {
-    // Define the main class for the application.
-    mainClass = "edu.distributedsystems.pw3.App"
+tasks.register<JavaExec>("clientWriter") {
+    mainClass.set("edu.distributedsystems.pw3.ClientWriter")
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("replica") {
+    mainClass.set("edu.distributedsystems.pw3.Replica")
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("clientReader") {
+    mainClass.set("edu.distributedsystems.pw3.ClientReader")
+    classpath = sourceSets["main"].runtimeClasspath
+}
+
+tasks.register<JavaExec>("clientReaderV2") {
+    mainClass.set("edu.distributedsystems.pw3.ClientReaderV2")
+    classpath = sourceSets["main"].runtimeClasspath
 }
 
 tasks.named<Test>("test") {
