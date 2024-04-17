@@ -8,50 +8,79 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 
-import com.rabbitmq.client.BuiltinExchangeType;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.DeliverCallback;
+import com.rabbitmq.client.Delivery;
 
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-public class Replica {
-    public static final String WRITER_EXCHANGE_NAME = "writer";
-    public static final String SEND_EXCHANGE_NAME = "send_reader";
-    public static final String RECEIVE_EXCHANGE_NAME = "receive_reader";
+public class Replica extends ProcessWithQueue {
+    protected final String writerExchangeName = Config.WRITER_EXCHANGE_NAME;
+    protected final String readerSendExchangeName = Config.READER_SEND_EXCHANGE_NAME;
+    protected final String readerReceiveExchangeName = Config.READER_RECEIVE_EXCHANGE_NAME;
     
-    public static final String LAST_COMMAND = "Read Last";
-    public static final String ALL_COMMAND = "Read All";
-    
-    public static List<String> readFile(File f) throws Exception {
-        FileReader fr = new FileReader(f);
-        BufferedReader in = new BufferedReader(fr);
+    protected final String readLastCommand = Config.READ_LAST_COMMAND;
+    protected final String readAllCommand = Config.READ_ALL_COMMAND;
 
-        String line = "";
-        List<String> lines = new LinkedList<String>();
+    protected final String id;
 
-        while((line = in.readLine()) != null) {
-            lines.add(line);
-        }
+    protected final File f;
+    protected final PrintWriter out;
 
-        in.close();
-        fr.close();
+    public Replica(String id) throws Exception {
+        super();
+        this.id = id;
 
-        return lines;
+        f = getFile();
+        out = getWriter();
+
+        declareExchangeAndBind(writerExchangeName);
+        declareExchangeAndBind(readerSendExchangeName);
+        declareExchange(readerReceiveExchangeName);
     }
 
-    public static boolean handleRead(Channel channel, String message, File f) throws Exception {
-        boolean isLast = message.equalsIgnoreCase(LAST_COMMAND);
-        boolean isAll = message.equalsIgnoreCase(ALL_COMMAND);
+    protected File getFile() {
+        String filePath = "rep_" + id + "/fichier.txt";
+
+        File f = new File(filePath);
+        f.getParentFile().mkdirs();
+
+        return f;
+    }
+
+    protected PrintWriter getWriter() throws Exception {
+        boolean append = true;
+
+        FileWriter fw = new FileWriter(f, append);
+        BufferedWriter bw = new BufferedWriter(fw);
+        PrintWriter out = new PrintWriter(bw);
+
+        return out;
+    }
+    
+    protected List<String> readFile() throws Exception {
+        try (FileReader fr = new FileReader(f);
+            BufferedReader in = new BufferedReader(fr)) {
+            String line = "";
+            List<String> lines = new LinkedList<String>();
+
+            while((line = in.readLine()) != null) {
+                lines.add(line);
+            }
+
+            return lines;
+        }
+    }
+
+    protected boolean handleRead(String message) throws Exception {
+        boolean isLast = message.equalsIgnoreCase(readLastCommand);
+        boolean isAll = message.equalsIgnoreCase(readAllCommand);
 
         if (!isLast && !isAll) {
             return false;
         }
 
-        List<String> lines = readFile(f);
+        List<String> lines = readFile();
 
         if (lines.size() == 0) {
             return true;
@@ -65,25 +94,28 @@ public class Replica {
         }
 
         for(String line : lines) {
-            channel.basicPublish(RECEIVE_EXCHANGE_NAME, "", null, line.getBytes("UTF-8"));
+            channel.basicPublish(readerReceiveExchangeName, "", null, line.getBytes("UTF-8"));
         }
 
         return true;
     }
 
 
-    public static void handleWrite(String message, PrintWriter out) {
+    protected void handleWrite(String message) {
         out.println(message);
         out.flush();
     }
 
-    public static void processMessage(Channel channel, String message, File f, PrintWriter out) {
+    protected void handle(String consumerTag, Delivery delivery) throws IOException {
+        String message = new String(delivery.getBody(), "UTF-8");
+        System.out.println(" [" + id +"] Received '" + message + "'");
+        
         try {
-            if (handleRead(channel, message, f)) {
+            if (handleRead(message)) {
                 return;
             }
 
-            handleWrite(message, out);
+            handleWrite(message);
         } catch (Exception e) {
             System.err.println(e);
         }
@@ -96,42 +128,6 @@ public class Replica {
 
         String replicaId = args[0];
 
-        boolean append = true;
-
-        String filePath = "rep_" + replicaId + "/fichier.txt";
-
-        File f = new File(filePath);
-        f.getParentFile().mkdirs();
-
-        FileWriter fw = new FileWriter(f, append);
-        BufferedWriter bw = new BufferedWriter(fw);
-        PrintWriter out = new PrintWriter(bw);
-
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost");
-
-        Connection connection = factory.newConnection();
-        Channel channel = connection.createChannel();
-
-        String queueName = channel.queueDeclare().getQueue();
-        
-        channel.exchangeDeclare(WRITER_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
-        channel.queueBind(queueName, WRITER_EXCHANGE_NAME, "");
-
-        channel.exchangeDeclare(SEND_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
-        channel.queueBind(queueName, SEND_EXCHANGE_NAME, "");
-
-        channel.exchangeDeclare(RECEIVE_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
-
-        boolean autoAck = true;
-
-        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
-            String message = new String(delivery.getBody(), "UTF-8");
-            System.out.println(" [x] Received '" + message + "'");
-            
-            processMessage(channel, message, f, out);
-        };
-
-        channel.basicConsume(queueName, autoAck, deliverCallback, consumerTag -> {});
+        new Replica(replicaId);
     }
 }

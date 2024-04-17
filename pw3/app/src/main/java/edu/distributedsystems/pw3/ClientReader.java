@@ -1,61 +1,35 @@
 package edu.distributedsystems.pw3;
 
-import com.rabbitmq.client.BuiltinExchangeType;
-import com.rabbitmq.client.Channel;
-import com.rabbitmq.client.Connection;
-import com.rabbitmq.client.ConnectionFactory;
-import com.rabbitmq.client.DeliverCallback;
+import javax.swing.JTextArea;
 
-import java.util.concurrent.locks.ReentrantLock;
+public abstract class ClientReader extends ProcessWithQueueAndTextArea {
+    protected final String sendExchangeName = Config.READER_SEND_EXCHANGE_NAME;
+    protected final String receiveExchangeName = Config.READER_RECEIVE_EXCHANGE_NAME;
 
-public class ClientReader {
-    public static final String SEND_EXCHANGE_NAME = "send_reader";
-    public static final String RECEIVE_EXCHANGE_NAME = "receive_reader";
+    protected final String command;
 
-    public static final String COMMAND = "Read Last";
+    protected ClientReader(String command) throws Exception {
+        super();
+        this.command = command;
 
-    public static void sendCommand(Channel channel, String command) throws Exception {
-        channel.exchangeDeclare(SEND_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
-        channel.basicPublish(SEND_EXCHANGE_NAME, "", null, command.getBytes("UTF-8"));
+        setup();
     }
 
-    public static void listenForResponse(Channel channel, Connection connection) throws Exception {
-        String queueName = channel.queueDeclare().getQueue();
+    protected ClientReader(JTextArea textArea, String command) throws Exception {
+        super(textArea);
+        this.command = command;
 
-        channel.exchangeDeclare(RECEIVE_EXCHANGE_NAME, BuiltinExchangeType.FANOUT);
-        channel.queueBind(queueName, RECEIVE_EXCHANGE_NAME, "");
-        
-        ReentrantLock mutex = new ReentrantLock();
-
-        boolean autoAck = true;
-
-        DeliverCallback deliverCallback = (consumerTag, delivery) -> {
-            if (!mutex.tryLock()) {
-                return;
-            }
-
-            String message = new String(delivery.getBody(), "UTF-8");
-            System.out.println(" [x] Last line: '" + message + "'");
-
-            try {
-                channel.close();
-                connection.close();
-            } catch (Exception e) {
-                System.err.println(e);
-            }
-        };
-
-        channel.basicConsume(queueName, autoAck, deliverCallback, consumerTag -> {});
+        setup();
     }
 
-    public static void main(String[] args) throws Exception {
-        ConnectionFactory factory = new ConnectionFactory();
-        factory.setHost("localhost");
+    private void setup() throws Exception {
+        declareExchange(sendExchangeName);
+        declareExchangeAndBind(receiveExchangeName);
+    
+        sendCommand();
+    } 
 
-        Connection connection = factory.newConnection();
-        Channel channel = connection.createChannel();
-        
-        listenForResponse(channel, connection);
-        sendCommand(channel, COMMAND);
+    protected void sendCommand() throws Exception {
+        basicPublish(sendExchangeName, command);
     }
 }

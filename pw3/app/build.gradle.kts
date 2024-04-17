@@ -32,6 +32,10 @@ java {
     }
 }
 
+application {
+    mainClass.set("edu.distributedsystems.pw3.App")
+}
+
 tasks.register<JavaExec>("clientWriter") {
     mainClass.set("edu.distributedsystems.pw3.ClientWriter")
     classpath = sourceSets["main"].runtimeClasspath
@@ -42,8 +46,8 @@ tasks.register<JavaExec>("replica") {
     classpath = sourceSets["main"].runtimeClasspath
 }
 
-tasks.register<JavaExec>("clientReader") {
-    mainClass.set("edu.distributedsystems.pw3.ClientReader")
+tasks.register<JavaExec>("clientReaderV1") {
+    mainClass.set("edu.distributedsystems.pw3.ClientReaderV1")
     classpath = sourceSets["main"].runtimeClasspath
 }
 
